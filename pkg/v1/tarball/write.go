@@ -98,18 +98,9 @@ func MultiRefWrite(refToImage map[name.Reference]v1.Image, w io.Writer, opts ...
 		}
 	}
 
-	m, err := calculateManifest(refToImage)
+	size, _, mBytes, err := getSizeAndManifest(refToImage)
 	if err != nil {
-		return sendUpdateReturn(o, fmt.Errorf("error calculating manifest: %v", err))
-	}
-	mBytes, err := json.Marshal(m)
-	if err != nil {
-		return sendUpdateReturn(o, fmt.Errorf("could not marshall manifest to bytes: %v", err))
-	}
-
-	size, err := calculateTarballSize(refToImage, mBytes)
-	if err != nil {
-		return sendUpdateReturn(o, fmt.Errorf("error calculating tarball size: %v", err))
+		return sendUpdateReturn(o, err)
 	}
 
 	return writeImagesToTar(refToImage, mBytes, size, w, o)
@@ -293,6 +284,29 @@ func calculateManifest(refToImage map[name.Reference]v1.Image) (m Manifest, err 
 	return m, nil
 }
 
+// CalculateSize calculates the expected complete size of the output tar file
+func CalculateSize(refToImage map[name.Reference]v1.Image) (size int64, err error) {
+	size, _, _, err = getSizeAndManifest(refToImage)
+	return size, err
+}
+
+func getSizeAndManifest(refToImage map[name.Reference]v1.Image) (size int64, m Manifest, mBytes []byte, err error) {
+	m, err = calculateManifest(refToImage)
+	if err != nil {
+		return 0, nil, nil, fmt.Errorf("unable to calculate manifest: %v", err)
+	}
+	mBytes, err = json.Marshal(m)
+	if err != nil {
+		return 0, nil, nil, fmt.Errorf("could not marshall manifest to bytes: %v", err)
+	}
+
+	size, err = calculateTarballSize(refToImage, mBytes)
+	if err != nil {
+		return 0, nil, nil, fmt.Errorf("error calculating tarball size: %v", err)
+	}
+	return size, m, mBytes, nil
+}
+
 // calculateTarballSize calculates the size of the tar file
 func calculateTarballSize(refToImage map[name.Reference]v1.Image, m []byte) (size int64, err error) {
 	imageToTags := dedupRefToImage(refToImage)
@@ -302,9 +316,9 @@ func calculateTarballSize(refToImage map[name.Reference]v1.Image, m []byte) (siz
 		if err != nil {
 			return size, fmt.Errorf("unable to get manifest for img %s: %v", name, err)
 		}
-		size += CalculateTarFileSize(manifest.Config.Size)
+		size += CalculateSingleFileInTarSize(manifest.Config.Size)
 		for _, l := range manifest.Layers {
-			size += CalculateTarFileSize(l.Size)
+			size += CalculateSingleFileInTarSize(l.Size)
 		}
 	}
 	// add the manifest
@@ -312,7 +326,7 @@ func calculateTarballSize(refToImage map[name.Reference]v1.Image, m []byte) (siz
 	if err != nil {
 		return size, err
 	}
-	size += CalculateTarFileSize(int64(len(mBytes)))
+	size += CalculateSingleFileInTarSize(int64(len(mBytes)))
 
 	// add the two padding blocks that indicate end of a tar file
 	size += 1024
@@ -416,10 +430,10 @@ func (pw *progressWriter) Close() error {
 	return io.EOF
 }
 
-// CalculateTarFileSize calculate the size a file will take up in a tar archive,
+// CalculateSingleFileInTarSize calculate the size a file will take up in a tar archive,
 // given the input data. Provided by rounding up to nearest whole block (512)
 // and adding header 512
-func CalculateTarFileSize(in int64) (out int64) {
+func CalculateSingleFileInTarSize(in int64) (out int64) {
 	// doing this manually, because math.Round() works with float64
 	out += in
 	if remainder := out % 512; remainder != 0 {
