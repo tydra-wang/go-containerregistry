@@ -321,12 +321,7 @@ func calculateTarballSize(refToImage map[name.Reference]v1.Image, m []byte) (siz
 			size += CalculateSingleFileInTarSize(l.Size)
 		}
 	}
-	// add the manifest
-	mBytes, err := json.Marshal(m)
-	if err != nil {
-		return size, err
-	}
-	size += CalculateSingleFileInTarSize(int64(len(mBytes)))
+	size += CalculateSingleFileInTarSize(int64(len(m)))
 
 	// add the two padding blocks that indicate end of a tar file
 	size += 1024
