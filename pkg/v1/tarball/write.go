@@ -25,6 +25,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/golang/glog"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/partial"
@@ -291,6 +292,9 @@ func CalculateSize(refToImage map[name.Reference]v1.Image) (size int64, err erro
 }
 
 func getSizeAndManifest(refToImage map[name.Reference]v1.Image) (size int64, m Manifest, mBytes []byte, err error) {
+	defer func() {
+		glog.Infof("manifest: %+v, size: %d", m, size)
+	}()
 	m, err = calculateManifest(refToImage)
 	if err != nil {
 		return 0, nil, nil, fmt.Errorf("unable to calculate manifest: %v", err)
